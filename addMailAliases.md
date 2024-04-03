@@ -38,7 +38,7 @@ Insert a new alias into the alias table:
 
 ```sql
 
-INSERT INTO alias (address, domain, active) VALUES ('откуда берем письма (почтовій ящик)', 'домен', 1);
+INSERT INTO alias (address, domain, active) VALUES ('откуда берем письма (почтовый ящик)', 'домен', 1);
 ```
 You should receive a confirmation message indicating the command was successful.
 4. Add Forwarding Rules
@@ -50,5 +50,5 @@ For the first email address:
 ```sql
 
 INSERT INTO forwardings (address, forwarding, domain, dest_domain, is_list, active)
-VALUES ('откуда берем письма', 'куда пересілаем', 'домен откуда', 'домен куда', 0, 1);
+VALUES ('откуда берем письма', 'куда пересылаем', 'домен откуда', 'домен куда', 0, 1);
 ```
