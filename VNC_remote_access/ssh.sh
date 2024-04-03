@@ -5,6 +5,7 @@ sudo apt update
 sudo apt install -y openssh-server
 
 # Enabling the SSH server to start on bootsudo systemctl enable ssh
+sudo systemctl enable ssh
 echo "SSH server is enabled to start on boot."
 
 # Checking if the SSH server is activeSSH_STATUS=$(sudo systemctl is-active ssh)
