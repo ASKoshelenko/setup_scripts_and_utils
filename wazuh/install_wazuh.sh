@@ -33,12 +33,12 @@ chown root:root /var/ossec/etc/newsslagent.*
 chmod 644 /var/ossec/etc/newsslagent.*
 
 # Prompt user to enter the agent name following the given format
-echo "Please enter the agent name (e.g., for cc_plakhov_personal, 'plakhov' is the personal identifier):"
+echo "Please enter the agent name (e.g., for cc_plakhov_personal, 'cc is contact center', 'plakhov' is lastname of user and 'personal' who is owner of laptop or PC):"
 read AGENT_NAME
 
 # Construct agent name and perform agent authentication
 echo "Performing agent authentication..."
-/var/ossec/bin/agent-auth -m 87.98.220.106 -x /var/ossec/etc/newsslagent.cert -k /var/ossec/etc/newsslagent.key -G default,ContactCenter -A cc_${AGENT_NAME}_personal
+/var/ossec/bin/agent-auth -m 87.98.220.106 -x /var/ossec/etc/newsslagent.cert -k /var/ossec/etc/newsslagent.key -G default,ContactCenter -A ${AGENT_NAME}
 
 # Reload systemd, enable and start Wazuh-agent, and then check its status
 echo "Setting up Wazuh-agent service..."
