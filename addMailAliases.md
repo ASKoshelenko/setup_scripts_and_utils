@@ -1,6 +1,6 @@
 markdown
 
-# Email Alias Configuration for Pritunl
+# Email Alias Configuration for mail servers based on Postfix + Roundcube + iRedadmin
 
 This guide explains how to create a mail alias for Pritunl with SQL command line and set up forwarding to multiple email addresses.
 
@@ -8,7 +8,7 @@ This guide explains how to create a mail alias for Pritunl with SQL command line
 
 Ensure you have the following before you start:
 
-- Access to the MariaDB/MySQL server where Pritunl's `vmail` database is hosted.
+- Access to the MariaDB/MySQL server `vmail` database is hosted.
 - Appropriate permissions to execute insert commands on the `vmail` database.
 - Knowledge of the target domain and email addresses to which emails will be forwarded.
 
