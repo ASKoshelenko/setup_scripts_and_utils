@@ -24,7 +24,7 @@ WAZUH_VERSION=${WAZUH_VERSION:-$DEFAULT_WAZUH_VERSION}
 
 # Install Wazuh-agent
 echo "Installing Wazuh-agent version $WAZUH_VERSION..."
-WAZUH_MANAGER="87.98.220.106" apt-get install wazuh-agent=$WAZUH_VERSION
+WAZUH_MANAGER="<*server ip*>" apt-get install wazuh-agent=$WAZUH_VERSION
 
 # Copy SSL certificates
 echo "Copying SSL certificates..."
@@ -38,7 +38,7 @@ read AGENT_NAME
 
 # Construct agent name and perform agent authentication
 echo "Performing agent authentication..."
-/var/ossec/bin/agent-auth -m 87.98.220.106 -x /var/ossec/etc/newsslagent.cert -k /var/ossec/etc/newsslagent.key -G default,ContactCenter -A ${AGENT_NAME}
+/var/ossec/bin/agent-auth -m <*server ip*> -x /var/ossec/etc/newsslagent.cert -k /var/ossec/etc/newsslagent.key -G default,ContactCenter -A ${AGENT_NAME}
 
 # Reload systemd, enable and start Wazuh-agent, and then check its status
 echo "Setting up Wazuh-agent service..."
