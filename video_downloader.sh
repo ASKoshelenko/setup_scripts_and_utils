@@ -61,7 +61,7 @@ ffmpeg -f concat -i "$filelist" -c copy output.mp4
 echo "Video has been created as output.mp4"
 
 # Delete temporary .ts files
-for file in 1080p_*.ts 720p_*.ts 360p_*.ts; do
+for file in *.ts; do
     rm -f "$file"
 done
 
