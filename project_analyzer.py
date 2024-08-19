@@ -72,6 +72,7 @@ def analyze_dependencies(file_path, content):
             dependencies.update(re.findall(r'import\s+([\w.]+)', content))
         elif file_extension == '.tf':
             dependencies.update(re.findall(r'source\s*=\s*[\'"](.+?)[\'"]', content))
+            dependencies.update(re.findall(r'module\s*"(.+?)"', content))
         elif file_extension == '.sh':
             dependencies.update(re.findall(r'(?:apt-get install|yum install)\s+(.+?)(?:\s|$)', content))
     
@@ -107,12 +108,17 @@ def analyze_config_file(file_path, content):
     elif file_name == '.env':
         env_vars = parse_env_file(content)
         config_info['environment_variables'] = list(env_vars.keys())
+    elif file_name.endswith('.tf'):
+        # Basic Terraform file analysis
+        config_info['resources'] = re.findall(r'resource\s*"(\w+)"\s*"', content)
+        config_info['data_sources'] = re.findall(r'data\s*"(\w+)"\s*"', content)
+        config_info['modules'] = re.findall(r'module\s*"(.+?)"', content)
 
     return config_info
 
 def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None):
     """Analyze the project structure and file contents."""
-    project_structure = {}
+    project_structure = {'dirs': [], 'files': {}}
     all_dependencies = set()
     file_count = 0
     dir_count = 0
@@ -133,16 +139,12 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
         
         relative_path = os.path.relpath(root, base_dir)
         current_level = project_structure
-        path_parts = relative_path.split(os.path.sep)
-        
-        for part in path_parts:
-            if part == '.':
-                continue
-            if part not in current_level:
-                current_level[part] = {'dirs': [], 'files': {}}
-            current_level = current_level[part]
-        
-        current_level['dirs'] = dirs
+        if relative_path != '.':
+            for part in relative_path.split(os.path.sep):
+                if part not in current_level['dirs']:
+                    current_level['dirs'].append(part)
+                    current_level[part] = {'dirs': [], 'files': {}}
+                current_level = current_level[part]
         
         for file in files:
             if file in IGNORED_FILES or file == script_name or file == output_file:
@@ -166,7 +168,7 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
                 file_dependencies = analyze_dependencies(file_path, content)
                 all_dependencies.update(file_dependencies)
                 
-                if file in ['package.json', '.env']:
+                if file in ['package.json', '.env'] or file.endswith('.tf'):
                     config_files[file] = analyze_config_file(file_path, content)
             else:
                 current_level['files'][file] = "Error reading file: Unable to decode"
@@ -177,25 +179,18 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
 def generate_tree_string(structure, prefix="", is_last=True):
     """Generate a string representation of the project tree."""
     lines = []
-    items = list(structure.items())
-    for index, (name, content) in enumerate(items):
-        if name in ['dirs', 'files']:
-            continue
-        connector = "└── " if is_last else "├── "
-        lines.append(f"{prefix}{connector}{name}/")
-        extension = "    " if is_last else "│   "
+    if 'dirs' in structure:
+        dirs = structure['dirs']
+        files = structure['files'].keys()
         
-        if isinstance(content, dict) and content:
-            if 'dirs' in content and content['dirs']:
-                for i, d in enumerate(content['dirs']):
-                    is_last_dir = (i == len(content['dirs']) - 1) and not content.get('files')
-                    lines.extend(generate_tree_string({d: content.get(d, {})}, prefix + extension, is_last_dir))
+        for i, item in enumerate(dirs + list(files)):
+            is_last_item = i == len(dirs) + len(files) - 1
+            connector = "└── " if is_last_item else "├── "
+            lines.append(f"{prefix}{connector}{item}")
             
-            if 'files' in content:
-                files = list(content['files'].keys())
-                for i, f in enumerate(files):
-                    is_last_file = i == len(files) - 1
-                    lines.append(f"{prefix}{extension}{'└── ' if is_last_file else '├── '}{f}")
+            if item in structure:
+                extension = "    " if is_last_item else "│   "
+                lines.extend(generate_tree_string(structure[item], prefix + extension, is_last_item))
     
     return lines
 
@@ -223,6 +218,16 @@ def generate_ai_prompt(project_name, file_count, dir_count, language_stats, depe
         env_vars = config_files['.env']['environment_variables']
         config_summary += f"\n.env file contains {len(env_vars)} environment variables:\n"
         config_summary += f"  {', '.join(env_vars)}\n"
+
+    terraform_files = [f for f in config_files if f.endswith('.tf')]
+    if terraform_files:
+        config_summary += "\nTerraform configuration summary:\n"
+        for tf_file in terraform_files:
+            config_summary += f"  {tf_file}:\n"
+            tf_config = config_files[tf_file]
+            config_summary += f"    Resources: {', '.join(tf_config.get('resources', []))}\n"
+            config_summary += f"    Data Sources: {', '.join(tf_config.get('data_sources', []))}\n"
+            config_summary += f"    Modules: {', '.join(tf_config.get('modules', []))}\n"
 
     prompt = f"""Analyze the following project in depth:
 
@@ -299,24 +304,20 @@ Your analysis should be detailed, insightful, and provide actionable recommendat
 
 def write_structure(structure, file, indent=""):
     """Write the project structure to the output file."""
-    for name, content in structure.items():
-        if name in ['dirs', 'files']:
-            continue
-        file.write(f"{indent}{name}/\n")
-        if isinstance(content, dict):
-            if 'dirs' in content:
-                for d in content['dirs']:
-                    write_structure({d: content.get(d, {})}, file, indent + "  ")
-            if 'files' in content:
-                for f, f_content in content['files'].items():
-                    file.write(f"{indent}  {f}\n")
-                    file.write(f"{indent}    File contents:\n")
-                    if f_content == "Binary file":
-                        file.write(f"{indent}      {f_content}\n")
-                    elif isinstance(f_content, str):
-                        for line in f_content.splitlines():
-                            file.write(f"{indent}      {line}\n")
-                    file.write(f"{'-'*40}\n")
+    if 'dirs' in structure:
+        for dir_name in structure['dirs']:
+            file.write(f"{indent}{dir_name}/\n")
+            write_structure(structure[dir_name], file, indent + "  ")
+        
+        for file_name, file_content in structure['files'].items():
+            file.write(f"{indent}{file_name}\n")
+            file.write(f"{indent}  File contents:\n")
+            if file_content == "Binary file":
+                file.write(f"{indent}    {file_content}\n")
+            elif isinstance(file_content, str):
+                for line in file_content.splitlines():
+                    file.write(f"{indent}    {line}\n")
+            file.write(f"{'-'*40}\n")
 
 def write_project_analysis(project_structure, dependencies, output_file, project_name, file_count, dir_count, language_stats, file_types, config_files):
     """Write the project analysis to a file."""
