@@ -7,6 +7,7 @@ import argparse
 from collections import defaultdict
 import re
 import logging
+import mimetypes
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,7 +18,13 @@ IGNORED_DIRS = {'.git', '.terraform', '__pycache__', 'node_modules', '.venv', '.
 IGNORED_FILES = {'.DS_Store', 'Thumbs.db'}
 
 def is_binary(file_path):
-    """Check if a file is binary."""
+    """Check if a file is binary based on its content and extension."""
+    # Check by extension first
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type and not mime_type.startswith('text'):
+        return True
+
+    # If mimetype is uncertain, check content
     try:
         with open(file_path, 'rb') as file:
             chunk = file.read(8192)
@@ -93,11 +100,12 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
         dir_count += len(dirs)
         
         relative_path = os.path.relpath(root, base_dir)
-        if relative_path == '.':
-            relative_path = os.path.basename(base_dir)
-        
         current_level = project_structure
-        for part in relative_path.split(os.path.sep):
+        path_parts = relative_path.split(os.path.sep)
+        
+        for part in path_parts:
+            if part == '.':
+                continue
             if part not in current_level:
                 current_level[part] = {'dirs': [], 'files': {}}
             current_level = current_level[part]
@@ -115,8 +123,8 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
             language_stats[file_extension] += 1
             
             if is_binary(file_path):
-                logging.info(f"Skipping binary file: {file_path}")
-                current_level['files'][file] = "File skipped (binary file)"
+                logging.info(f"Skipping binary file content: {file_path}")
+                current_level['files'][file] = "Binary file"
                 continue
             
             content = read_file(file_path)
@@ -132,32 +140,28 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
 
 def generate_tree_string(structure, prefix="", is_last=True):
     """Generate a string representation of the project tree."""
-    tree = []
-    if not isinstance(structure, dict):
-        return [f"{prefix}{'└── ' if is_last else '├── '}{structure}"]
-    
+    lines = []
     items = list(structure.items())
-    for i, (name, content) in enumerate(items):
-        is_last_item = i == len(items) - 1
+    for index, (name, content) in enumerate(items):
         if name in ['dirs', 'files']:
             continue
-        tree.append(f"{prefix}{'└── ' if is_last_item else '├── '}{name}/")
-        extension = "    " if is_last_item else "│   "
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{name}/")
+        extension = "    " if is_last else "│   "
         
-        if 'dirs' in content:
-            for j, d in enumerate(content['dirs']):
-                is_last_dir = j == len(content['dirs']) - 1
-                if d in content:
-                    tree.extend(generate_tree_string(content[d], prefix + extension, is_last_dir))
-                else:
-                    tree.append(f"{prefix}{extension}{'└── ' if is_last_dir else '├── '}{d}/")
-        
-        if 'files' in content:
-            files = list(content['files'].keys())
-            for j, f in enumerate(files):
-                tree.append(f"{prefix}{extension}{'└── ' if j == len(files) - 1 else '├── '}{f}")
+        if isinstance(content, dict) and content:
+            if 'dirs' in content and content['dirs']:
+                for i, d in enumerate(content['dirs']):
+                    is_last_dir = (i == len(content['dirs']) - 1) and not content.get('files')
+                    lines.extend(generate_tree_string({d: content.get(d, {})}, prefix + extension, is_last_dir))
+            
+            if 'files' in content:
+                files = list(content['files'].keys())
+                for i, f in enumerate(files):
+                    is_last_file = i == len(files) - 1
+                    lines.append(f"{prefix}{extension}{'└── ' if is_last_file else '├── '}{f}")
     
-    return tree
+    return lines
 
 def generate_ai_prompt(project_name, file_count, dir_count, language_stats, dependencies, project_structure):
     """Generate a detailed AI prompt describing the project."""
@@ -253,25 +257,27 @@ def write_project_analysis(project_structure, dependencies, output_file, project
         logging.error(f"Error writing project analysis: {str(e)}")
 
 def write_structure(structure, file, indent=""):
+    """Write the project structure to the output file."""
     for name, content in structure.items():
         if name in ['dirs', 'files']:
             continue
         file.write(f"{indent}{name}/\n")
-        if 'dirs' in content:
-            for d in content['dirs']:
-                if d in content:
-                    write_structure({d: content[d]}, file, indent + "  ")
-                else:
-                    file.write(f"{indent}  {d}/\n")
-        if 'files' in content:
-            for f, f_content in content['files'].items():
-                file.write(f"{indent}  {f}\n")
-                if not f_content.startswith("File skipped") and not f_content.startswith("Error reading file"):
-                    file.write(f"{indent}    File contents:\n")
-                    file.write(f"{f_content}\n")
-                    file.write(f"{'-'*40}\n")
-                else:
-                    file.write(f"{indent}    {f_content}\n")
+        if isinstance(content, dict):
+            if 'dirs' in content:
+                for d in content['dirs']:
+                    write_structure({d: content.get(d, {})}, file, indent + "  ")
+            if 'files' in content:
+                for f, f_content in content['files'].items():
+                    file.write(f"{indent}  {f}\n")
+                    if f_content == "Binary file":
+                        file.write(f"{indent}    {f_content}\n")
+                    elif isinstance(f_content, str):
+                        if not f_content.startswith("File skipped") and not f_content.startswith("Error reading file"):
+                            file.write(f"{indent}    File contents:\n")
+                            file.write(f"{f_content}\n")
+                            file.write(f"{'-'*40}\n")
+                        else:
+                            file.write(f"{indent}    {f_content}\n")
 
 def main():
     parser = argparse.ArgumentParser(description="Project Structure and Dependency Analyzer")
