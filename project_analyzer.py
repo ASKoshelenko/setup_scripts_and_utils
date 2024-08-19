@@ -75,7 +75,7 @@ def analyze_dependencies(file_path, content):
 
 def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None):
     """Analyze the project structure and file contents."""
-    project_structure = defaultdict(lambda: {"dirs": [], "files": {}})
+    project_structure = {}
     all_dependencies = set()
     file_count = 0
     dir_count = 0
@@ -86,7 +86,7 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
             current_depth = root[len(base_dir):].count(os.path.sep)
             if current_depth > max_depth:
                 logging.info(f"Reached max depth at {root}, skipping further subdirectories")
-                del dirs[:]
+                dirs[:] = []
                 continue
         
         dirs[:] = [d for d in dirs if d not in IGNORED_DIRS and not d.startswith('.')]
@@ -96,7 +96,13 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
         if relative_path == '.':
             relative_path = os.path.basename(base_dir)
         
-        project_structure[relative_path]["dirs"] = dirs
+        current_level = project_structure
+        for part in relative_path.split(os.path.sep):
+            if part not in current_level:
+                current_level[part] = {'dirs': [], 'files': {}}
+            current_level = current_level[part]
+        
+        current_level['dirs'] = dirs
         
         for file in files:
             if file in IGNORED_FILES or file == script_name or file == output_file:
@@ -110,61 +116,121 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
             
             if is_binary(file_path):
                 logging.info(f"Skipping binary file: {file_path}")
-                project_structure[relative_path]["files"][file] = "File skipped (binary file)"
+                current_level['files'][file] = "File skipped (binary file)"
                 continue
             
             content = read_file(file_path)
             if content is not None:
-                project_structure[relative_path]["files"][file] = content
+                current_level['files'][file] = content
                 file_dependencies = analyze_dependencies(file_path, content)
                 all_dependencies.update(file_dependencies)
             else:
-                project_structure[relative_path]["files"][file] = "Error reading file: Unable to decode"
+                current_level['files'][file] = "Error reading file: Unable to decode"
 
     logging.info(f"Analyzed {file_count} files in {dir_count} directories")
     return project_structure, all_dependencies, file_count, dir_count, language_stats
 
-def generate_tree(structure, prefix=""):
-    """Generate a tree-like structure of the project."""
+def generate_tree_string(structure, prefix="", is_last=True):
+    """Generate a string representation of the project tree."""
     tree = []
+    if not isinstance(structure, dict):
+        return [f"{prefix}{'└── ' if is_last else '├── '}{structure}"]
+    
     items = list(structure.items())
-    for i, (path, content) in enumerate(items):
-        is_last = i == len(items) - 1
-        tree.append(f"{prefix}{'└── ' if is_last else '├── '}{os.path.basename(path)}/")
-        if content['dirs'] or content['files']:
-            extension = "    " if is_last else "│   "
-            if content['dirs']:
-                tree.extend(generate_tree({d: structure[os.path.join(path, d)] for d in content['dirs']}, prefix + extension))
-            for j, file in enumerate(content['files']):
-                is_last_file = j == len(content['files']) - 1 and not content['dirs']
-                tree.append(f"{prefix}{extension}{'└── ' if is_last_file else '├── '}{file}")
+    for i, (name, content) in enumerate(items):
+        is_last_item = i == len(items) - 1
+        if name in ['dirs', 'files']:
+            continue
+        tree.append(f"{prefix}{'└── ' if is_last_item else '├── '}{name}/")
+        extension = "    " if is_last_item else "│   "
+        
+        if 'dirs' in content:
+            for j, d in enumerate(content['dirs']):
+                is_last_dir = j == len(content['dirs']) - 1
+                if d in content:
+                    tree.extend(generate_tree_string(content[d], prefix + extension, is_last_dir))
+                else:
+                    tree.append(f"{prefix}{extension}{'└── ' if is_last_dir else '├── '}{d}/")
+        
+        if 'files' in content:
+            files = list(content['files'].keys())
+            for j, f in enumerate(files):
+                tree.append(f"{prefix}{extension}{'└── ' if j == len(files) - 1 else '├── '}{f}")
+    
     return tree
 
-def generate_ai_prompt(project_name, file_count, dir_count, language_stats, dependencies):
-    """Generate an AI prompt describing the project."""
+def generate_ai_prompt(project_name, file_count, dir_count, language_stats, dependencies, project_structure):
+    """Generate a detailed AI prompt describing the project."""
     top_languages = sorted(language_stats.items(), key=lambda x: x[1], reverse=True)[:5]
     language_summary = ", ".join(f"{ext[1:]} ({count} files)" for ext, count in top_languages if ext != '.')
     
-    prompt = f"""Analyze the following project:
+    tree_structure = "\n".join(generate_tree_string(project_structure))
 
+    prompt = f"""Analyze the following project in depth:
+
+PROJECT OVERVIEW:
 Project Name: {project_name}
 Total Files: {file_count}
 Total Directories: {dir_count}
 Main Languages/File Types: {language_summary}
-Key Dependencies: {', '.join(list(dependencies)[:10])}
+Key Dependencies: {', '.join(sorted(dependencies)[:20])}
 
-This project appears to be a {project_name} with a focus on {top_languages[0][0][1:] if top_languages else 'unknown'} development. 
-Based on the structure and dependencies, it seems to be a {project_name} that likely involves {top_languages[0][0][1:] if top_languages else 'unknown'} programming.
+DETAILED ANALYSIS INSTRUCTIONS:
+You are an AI assistant specializing in code analysis and software architecture. Your task is to provide a comprehensive analysis of this project based on the information provided. Please consider the following aspects in your analysis:
 
-Please analyze the project structure and contents provided below, and give insights on:
-1. The overall architecture of the project
-2. Main functionalities or purpose of the project
+1. Project Architecture:
+   - Identify the overall architectural pattern (e.g., microservices, monolithic, serverless)
+   - Analyze the project structure and how it reflects the architecture
+   - Evaluate the separation of concerns and modularity
+
+2. Technology Stack:
+   - List the main technologies, frameworks, and languages used
+   - Assess the choice of technologies and their suitability for the project
+
+3. Infrastructure and Deployment:
+   - Identify any infrastructure-as-code elements (e.g., Terraform files)
+   - Analyze the deployment strategy and environment setup
+
+4. Security Considerations:
+   - Highlight any security measures implemented in the code
+   - Identify potential security risks or areas for improvement
+
+5. Scalability and Performance:
+   - Evaluate how well the project is designed to scale
+   - Identify any performance optimization techniques used
+
+6. Code Quality and Best Practices:
+   - Assess adherence to coding standards and best practices
+   - Identify areas where code quality could be improved
+
+7. Testing and Quality Assurance:
+   - Analyze the testing approach (unit tests, integration tests, etc.)
+   - Suggest improvements in the testing strategy if necessary
+
+8. Documentation:
+   - Evaluate the quality and completeness of documentation
+   - Suggest areas where documentation could be improved
+
+9. Dependencies and Third-party Integrations:
+   - Analyze the use of external dependencies and their management
+   - Identify any potential risks associated with third-party integrations
+
+10. Unique Features or Patterns:
+    - Highlight any unique or interesting code patterns or architectural decisions
+    - Discuss their potential benefits or drawbacks
+
+PROJECT STRUCTURE OVERVIEW:
+{tree_structure}
+
+Based on this information, please provide:
+1. A comprehensive analysis of the project's architecture and codebase
+2. Identification of the main functionalities and purpose of the project
 3. Potential areas for improvement or optimization
 4. Any security concerns or best practices that should be implemented
-5. Suggestions for scaling this project if needed
+5. Suggestions for scaling this project
+6. Overall strengths and weaknesses of the project
 
-Project structure and contents follow:
-
+Your analysis should be detailed, insightful, and provide actionable recommendations for improving the project.
 """
     return prompt
 
@@ -172,38 +238,40 @@ def write_project_analysis(project_structure, dependencies, output_file, project
     """Write the project analysis to a file."""
     try:
         with open(output_file, 'w', encoding='utf-8') as out_file:
-            ai_prompt = generate_ai_prompt(project_name, file_count, dir_count, language_stats, dependencies)
+            ai_prompt = generate_ai_prompt(project_name, file_count, dir_count, language_stats, dependencies, project_structure)
             out_file.write(ai_prompt)
             
-            out_file.write("\nPROJECT TREE:\n\n")
-            tree = generate_tree(project_structure)
-            out_file.write("\n".join(tree))
-            
             out_file.write("\n\nDETAILED PROJECT STRUCTURE:\n\n")
-            for path, content in project_structure.items():
-                out_file.write(f"\nDirectory: {path}\n")
-                if content['dirs']:
-                    out_file.write("  Subdirectories:\n")
-                    for d in content['dirs']:
-                        out_file.write(f"    {d}\n")
-                if content['files']:
-                    out_file.write("  Files:\n")
-                    for file, file_content in content['files'].items():
-                        out_file.write(f"    {file}\n")
-                        if not file_content.startswith("File skipped") and not file_content.startswith("Error reading file"):
-                            out_file.write(f"      File contents of {file}:\n")
-                            out_file.write(f"{file_content}\n")
-                            out_file.write(f"{'-'*40}\n")
-                        else:
-                            out_file.write(f"      {file_content}\n")
+            write_structure(project_structure, out_file)
             
             out_file.write("\nPROJECT DEPENDENCIES:\n")
             for dep in sorted(dependencies):
                 out_file.write(f"  {dep}\n")
         
         logging.info(f"Successfully wrote project analysis to {output_file}")
-    except IOError as e:
-        logging.error(f"Error writing to output file: {e}")
+    except Exception as e:
+        logging.error(f"Error writing project analysis: {str(e)}")
+
+def write_structure(structure, file, indent=""):
+    for name, content in structure.items():
+        if name in ['dirs', 'files']:
+            continue
+        file.write(f"{indent}{name}/\n")
+        if 'dirs' in content:
+            for d in content['dirs']:
+                if d in content:
+                    write_structure({d: content[d]}, file, indent + "  ")
+                else:
+                    file.write(f"{indent}  {d}/\n")
+        if 'files' in content:
+            for f, f_content in content['files'].items():
+                file.write(f"{indent}  {f}\n")
+                if not f_content.startswith("File skipped") and not f_content.startswith("Error reading file"):
+                    file.write(f"{indent}    File contents:\n")
+                    file.write(f"{f_content}\n")
+                    file.write(f"{'-'*40}\n")
+                else:
+                    file.write(f"{indent}    {f_content}\n")
 
 def main():
     parser = argparse.ArgumentParser(description="Project Structure and Dependency Analyzer")
@@ -222,12 +290,21 @@ def main():
     
     script_name = os.path.basename(__file__)
     
-    logging.info(f"Starting analysis of project: {base_directory}")
-    project_structure, dependencies, file_count, dir_count, language_stats = analyze_project(base_directory, args.depth, script_name, output_filename)
-    write_project_analysis(project_structure, dependencies, output_filename, project_name, file_count, dir_count, language_stats)
-    logging.info(f"Project analysis has been written to: {output_filename}")
-    logging.info(f"Total files analyzed: {file_count}")
-    logging.info(f"Total directories analyzed: {dir_count}")
+    try:
+        logging.info(f"Starting analysis of project: {base_directory}")
+        project_structure, dependencies, file_count, dir_count, language_stats = analyze_project(base_directory, args.depth, script_name, output_filename)
+        write_project_analysis(project_structure, dependencies, output_filename, project_name, file_count, dir_count, language_stats)
+        logging.info(f"Project analysis has been written to: {output_filename}")
+        logging.info(f"Total files analyzed: {file_count}")
+        logging.info(f"Total directories analyzed: {dir_count}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {str(e)}")
+        logging.info("The script will attempt to save partial results.")
+        try:
+            write_project_analysis(project_structure, dependencies, output_filename, project_name, file_count, dir_count, language_stats)
+            logging.info(f"Partial analysis has been written to: {output_filename}")
+        except Exception as write_error:
+            logging.error(f"Failed to write partial results: {str(write_error)}")
 
 if __name__ == "__main__":
     main()
