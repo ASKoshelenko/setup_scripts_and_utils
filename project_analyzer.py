@@ -9,6 +9,31 @@ import re
 import logging
 import mimetypes
 
+"""
+Project Structure and Dependency Analyzer
+
+This script analyzes the structure and dependencies of a project directory.
+
+Usage:
+    python project_analyzer.py [project_dir] [-o OUTPUT] [-d DEPTH]
+
+Arguments:
+    project_dir    Project directory to analyze (default: current directory)
+
+Options:
+    -o, --output   Output file name (default: project_name_analysis.txt)
+    -d, --depth    Maximum depth for directory analysis
+
+Examples:
+    python project_analyzer.py /path/to/project
+    python project_analyzer.py -o my_analysis.txt
+    python project_analyzer.py /path/to/project -d 3
+
+The script will generate a detailed analysis of the project structure,
+including file types, dependencies, and configuration files. The analysis
+is written to the specified output file or a default file named after the project.
+"""
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
