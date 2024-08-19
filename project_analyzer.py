@@ -13,9 +13,55 @@ import mimetypes
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # List of ignored directories
-IGNORED_DIRS = {'.git', '.terraform', '__pycache__', 'node_modules', '.venv', '.idea', '.vscode'}
+IGNORED_DIRS = {
+    '.git', '.svn', '.hg',  # Version control
+    '.terraform', 'terraform.tfstate.d',  # Terraform
+    '__pycache__', '.pytest_cache', '.mypy_cache',  # Python
+    'node_modules', 'bower_components',  # JavaScript
+    '.venv', 'venv', 'env',  # Python virtual environments
+    '.idea', '.vscode',  # IDEs
+    'build', 'dist', 'target',  # Build outputs
+    'logs', 'tmp', 'temp',  # Temporary and log files
+}
+
 # List of ignored files
-IGNORED_FILES = {'.DS_Store', 'Thumbs.db'}
+IGNORED_FILES = {
+    # General
+    '.DS_Store', 'Thumbs.db', 'desktop.ini',
+    '.gitignore', '.gitattributes',
+    'LICENSE', 'CHANGELOG.md',
+    
+    # Terraform
+    '.terraform.lock.hcl', '*.tfstate', '*.tfstate.backup', '*.tfvars',
+    
+    # Python
+    '*.pyc', '*.pyo', '*.pyd', '*.egg-info',
+    
+    # JavaScript
+    'package-lock.json', 'yarn.lock', 'npm-debug.log*', 'yarn-debug.log*', 'yarn-error.log*',
+    
+    # Java
+    '*.class', '*.jar', '*.war',
+    
+    # C#
+    '*.suo', '*.user', '*.userosscache', '*.sln.docstates',
+    
+    # Visual Studio Code
+    '.vscode/*',
+    
+    # JetBrains IDEs
+    '.idea/*', '*.iml',
+    
+    # Logs
+    '*.log',
+    
+    # OS generated
+    '.DS_Store?', '._*', '.Spotlight-V100', '.Trashes', 'ehthumbs.db', 'Thumbs.db',
+}
+
+def is_ignored_file(file_name):
+    """Check if a file should be ignored based on its name."""
+    return any(file_name.endswith(pattern.lstrip('*')) or file_name == pattern for pattern in IGNORED_FILES)
 
 def is_binary(file_path):
     """Check if a file is binary based on its content and extension."""
@@ -147,7 +193,7 @@ def analyze_project(base_dir, max_depth=None, script_name=None, output_file=None
                 current_level = current_level[part]
         
         for file in files:
-            if file in IGNORED_FILES or file == script_name or file == output_file:
+            if is_ignored_file(file) or file == script_name or file == output_file:
                 logging.info(f"Skipping ignored file: {file}")
                 continue
             file_count += 1
