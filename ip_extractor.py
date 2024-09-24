@@ -61,10 +61,13 @@ def remove_duplicate_and_subset_ips(ip_addresses: Set[str]) -> Tuple[List[str], 
 
 def save_to_csv(ip_addresses: List[str], output_file: str):
     """Save IP addresses to a CSV file."""
+    # Sort IP addresses
+    sorted_ips = sorted(ip_addresses, key=lambda x: ip_network(x, strict=False))
+    
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['IP Address/Range'])
-        for ip in ip_addresses:
+        for ip in sorted_ips:
             writer.writerow([ip])
 
 def main():
